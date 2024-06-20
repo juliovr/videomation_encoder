@@ -9,8 +9,11 @@
 // #include "../include/curl/curl.h"
 
 
-#define WINDOW_WIDTH    1920
-#define WINDOW_HEIGHT   1080
+#define IMAGE_WIDTH    1920
+#define IMAGE_HEIGHT   1080
+
+#define MAX(a, b) ((a) > (b)) ? (a) : (b)
+#define MIN(a, b) ((a) < (b)) ? (a) : (b)
 
 struct Content {
     u32 version;
@@ -74,70 +77,16 @@ void read_bitmap(char *filename)
     int x = 5;
 }
 
-// void write_bitmap()
-// {
-//     u32 data[] = {
-//         0xff000000, 0xff000000, 0xff000000, 0xff000000, 0xff000000, 0xff000000,
-//         0xff000000, 0xff000000, 0xff000000, 0xff000000, 0xff000000, 0xff000000,
-//         0xff000000, 0xff000000, 0xff000000, 0xff000000, 0xff000000, 0xff000000,
-//         0xff000000, 0xff000000, 0xff000000, 0xff000000, 0xff000000, 0xff000000,
-
-//         0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000,
-//         0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000,
-//         0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000,
-//         0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000, 0x00ff0000,
-//     };
-
-//     BitmapHeader header = {};
-//     header.signature = 0x4d42;
-//     header.file_size = sizeof(Bitmap) + sizeof(data);
-//     header.data_offset = sizeof(Bitmap);
-
-//     BitmapInfoHeader info_header = {};
-//     info_header.info_header_size = sizeof(BitmapInfoHeader);
-//     info_header.width = 6;
-//     info_header.height = 8;
-//     info_header.planes = 1;
-//     info_header.bits_per_pixel = 32;
-//     info_header.compression = 3;
-//     info_header.image_size = info_header.width*info_header.height*4;
-//     info_header.horizontal_resolution = 2835;
-//     info_header.vertical_resolution = 2835;
-//     info_header.colors_used = 0;
-//     info_header.important_colors = 0;
-//     info_header.red_mask = 0xff000000;
-//     info_header.green_mask = 0xff0000;
-//     info_header.blue_mask = 0xff00;
-//     info_header.alpha_mask = 0xff;
-
-//     Bitmap bitmap = {};
-//     bitmap.header = header;
-//     bitmap.info_header = info_header;
-
-//     char *filename = "test_write.bmp";
-//     FILE *file;
-//     if (fopen_s(&file, filename, "wb") != 0) {
-//         exit(1);
-//     }
-
-//     fwrite(&bitmap, sizeof(bitmap), 1, file);
-//     fwrite(data, sizeof(data), 1, file);
-
-//     fclose(file);
-// }
-
-struct ContentWritable {
-    u32 version;
-    u32 size;
-};
-
-void write_bitmap(char *filename, Content content)
+void write_bitmap(Content content)
 {
-    u32 size = content.size;
-    u32 width = 1920;
-    u32 height = 1080;
+#if 0
+    u32 width = IMAGE_WIDTH;
+    u32 height = IMAGE_HEIGHT;
+#else
+    u32 width = 50;
+    u32 height = 50;
+#endif
     u32 image_size_bytes = width*height*4;
-    u8 *data = content.data;
 
     BitmapHeader header = {};
     header.signature = 0x4d42;
@@ -165,28 +114,59 @@ void write_bitmap(char *filename, Content content)
     bitmap.header = header;
     bitmap.info_header = info_header;
 
-    FILE *file;
-    if (fopen_s(&file, filename, "wb") != 0) {
-        exit(1);
+    char filename[128];
+
+    int running_bytes_written = 0;
+
+     // 8: add version and size of Content.
+    int max = MAX(image_size_bytes, content.size + 8);
+    int min = MIN(image_size_bytes, content.size + 8);
+    int images_to_generate = (max / min) + 1; // + 1 for int division (to round up).
+    int offset = 0;
+    int remaining_data_size = content.size;
+
+    for (int image_index = 0; image_index < images_to_generate; image_index++) {
+        snprintf(filename, sizeof(filename), "test_bitmap_from_file_%d.bmp", image_index);
+        FILE *file;
+        if (fopen_s(&file, filename, "wb") != 0) {
+            exit(1);
+        }
+
+        fwrite(&bitmap, sizeof(Bitmap), 1, file);
+
+        // Store data
+        u32 bytes_to_write = MIN(min, remaining_data_size);
+
+        // This only goes in the first image
+        if (image_index == 0) {
+            fwrite(&content.version, sizeof(content.version), 1, file);
+            fwrite(&content.size, sizeof(content.size), 1, file);
+
+            bytes_to_write -= sizeof(content.version);
+            bytes_to_write -= sizeof(content.size);
+        }
+
+        fwrite(content.data + offset, bytes_to_write, 1, file);
+
+        
+        // Store unfill image with 0.
+        u8 empty_data[] = { 0 };
+
+        s32 image_left_fill_bytes = image_size_bytes - bytes_to_write;
+        if (image_index == 0) {
+            image_left_fill_bytes -= sizeof(content.size);
+            image_left_fill_bytes -= sizeof(content.version);
+        }
+
+        for (s32 i = 0; i < image_left_fill_bytes; i++) {
+            fwrite(empty_data, sizeof(empty_data), 1, file);
+        }
+
+        fclose(file);
+
+        offset += bytes_to_write;
+        remaining_data_size -= bytes_to_write;
     }
-
-    ContentWritable writable = {};
-    writable.version = content.version;
-    writable.size = content.size;
-
-    fwrite(&bitmap, sizeof(Bitmap), 1, file);
-
-    // Store data
-    fwrite(&writable, sizeof(ContentWritable), 1, file);
-    fwrite(data, size, 1, file);
-    
-    u8 empty_data[] = { 0 };
-    u32 remaining_data_bytes = image_size_bytes - size - sizeof(ContentWritable);
-    for (u32 i = 0; i < remaining_data_bytes; i++) {
-        fwrite(empty_data, sizeof(empty_data), 1, file);
-    }
-
-    fclose(file);
 }
 
 Content get_file_content(char *filename)
@@ -217,93 +197,8 @@ int main()
 {
     Content content = get_file_content("test.txt");
 
-    // read_bitmap();
-
-    // write_bitmap();
-
-    
-    char *filename = "test_bitmap_from_file.bmp";
-    write_bitmap(filename, content);
-
-    read_bitmap(filename);
-    
-    u32 size_block = content.size / 4;
-    u32 size_remaining = content.size - size_block;
-    
-#if 0
-    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Youtube backup");
-
-    while (!WindowShouldClose()) {
-        BeginDrawing();
-            ClearBackground(BLACK);
-
-            int w = 10;
-            u64 block_index = 0;
-            
-            // Encode version
-            {
-                Color color = {};
-                color.r = content.version;
-                
-                float x = (float)((block_index * w) % WINDOW_WIDTH);
-                float y = (float)(((block_index * w) / WINDOW_WIDTH) * w);
-                Rectangle rect = { x, y, (float)w, (float)w };
-                DrawRectangleRec(rect, color);
-
-                block_index++;
-            }
-
-            // Encode size - part 1
-            {
-                Color color = {};
-                color.r = (content.size >> 0)  & 0xFF;
-                color.g = (content.size >> 8)  & 0xFF;
-                color.b = (content.size >> 16) & 0xFF;
-                color.a = (content.size >> 24) & 0xFF;
-
-                float x = (float)((block_index * w) % WINDOW_WIDTH);
-                float y = (float)(((block_index * w) / WINDOW_WIDTH) * w);
-                Rectangle rect = { x, y, (float)w, (float)w };
-                DrawRectangleRec(rect, color);
-
-                block_index++;
-            }
-
-            // Encode size - part 2
-            // {
-            //     Color color = {};
-            //     color.r = (content.size >> 32) & 0xFF;
-            //     color.g = (content.size >> 40) & 0xFF;
-            //     color.b = (content.size >> 48) & 0xFF;
-            //     color.a = (content.size >> 56) & 0xFF;
-
-            //     float x = (float)((block_index * w) % WINDOW_WIDTH);
-            //     float y = (float)(((block_index * w) / WINDOW_WIDTH) * w);
-            //     Rectangle rect = { x, y, (float)w, (float)w };
-            //     DrawRectangleRec(rect, color);
-
-            //     block_index++;
-            // }
-
-            for (u64 i = 0; i < size_block; i++) {
-                u64 data_index = 4*i;
-                Color color = {};
-                color.r = content.data[data_index];
-                color.g = content.data[data_index + 1];
-                color.b = content.data[data_index + 2];
-                color.a = content.data[data_index + 3];
-
-                float x = (float)((((block_index + i) * w)) % WINDOW_WIDTH);
-                float y = (float)(((((block_index + i) * w)) / WINDOW_WIDTH) * w);
-                Rectangle rect = { x, y, (float)w, (float)w };
-                DrawRectangleRec(rect, color);
-            }
-
-        EndDrawing();
-    }
-
-    CloseWindow();
-#endif
+    // char *filename = "test_bitmap_from_file.bmp";
+    write_bitmap(content);
 
     return 0;
 }
