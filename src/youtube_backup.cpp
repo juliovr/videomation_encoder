@@ -18,10 +18,14 @@
 #define MAX(a, b) ((a) > (b)) ? (a) : (b)
 #define MIN(a, b) ((a) < (b)) ? (a) : (b)
 
-struct Content {
+struct ContentHeader {
     u32 version;
     u32 size;
     char filename[128];
+};
+
+struct Content {
+    ContentHeader header;
     u8 *data;
 };
 
@@ -59,6 +63,7 @@ struct Bitmap {
 };
 #pragma pack(pop)
 
+char *image_filename_template = "image_%04d.bmp";
 
 void read_bitmap(char *filename)
 {
@@ -84,13 +89,13 @@ void read_bitmap(char *filename)
 void write_bitmap(Content content)
 {
 #if 0
-    u32 width = IMAGE_WIDTH;
-    u32 height = IMAGE_HEIGHT;
+    s32 width = IMAGE_WIDTH;
+    s32 height = IMAGE_HEIGHT;
 #else
-    u32 width = 50;
-    u32 height = 50;
+    s32 width = 50;
+    s32 height = 50;
 #endif
-    u32 image_size_bytes = width*height*4;
+    s32 image_size_bytes = width*height*4;
 
     BitmapHeader header = {};
     header.signature = 0x4d42;
@@ -122,15 +127,12 @@ void write_bitmap(Content content)
 
     int running_bytes_written = 0;
 
-     // 8: add version and size of Content.
-    int max = MAX(image_size_bytes, content.size + 8);
-    int min = MIN(image_size_bytes, content.size + 8);
-    int images_to_generate = (max / min) + 1; // + 1 for int division (to round up).
+    int images_to_generate = ((sizeof(ContentHeader) + content.header.size) / image_size_bytes) + 1; // + 1 for int division (to round up).
     int offset = 0;
-    int remaining_data_size = content.size;
+    int remaining_data_size = content.header.size;
 
     for (int image_index = 0; image_index < images_to_generate; image_index++) {
-        snprintf(filename, sizeof(filename), "image_%04d.bmp", image_index);
+        snprintf(filename, sizeof(filename), image_filename_template, image_index);
         FILE *file;
         if (fopen_s(&file, filename, "wb") != 0) {
             exit(1);
@@ -139,17 +141,13 @@ void write_bitmap(Content content)
         fwrite(&bitmap, sizeof(Bitmap), 1, file);
 
         // Store data
-        u32 bytes_to_write = MIN(min, remaining_data_size);
+        u32 bytes_to_write = MIN(image_size_bytes, remaining_data_size);
+        s32 image_left_fill_bytes = image_size_bytes - bytes_to_write;
 
         // This only goes in the first image
         if (image_index == 0) {
-            fwrite(&content.version, sizeof(content.version), 1, file);
-            fwrite(&content.size, sizeof(content.size), 1, file);
-            fwrite(content.filename, sizeof(content.filename), 1, file);
-
-            bytes_to_write -= sizeof(content.version);
-            bytes_to_write -= sizeof(content.size);
-            bytes_to_write -= sizeof(content.filename);
+            fwrite(&content.header, sizeof(ContentHeader), 1, file);
+            bytes_to_write -= sizeof(ContentHeader);
         }
 
         fwrite(content.data + offset, bytes_to_write, 1, file);
@@ -158,7 +156,6 @@ void write_bitmap(Content content)
         // Store unfill image with 0.
         u8 empty_data[] = { 0 };
 
-        s32 image_left_fill_bytes = image_size_bytes - bytes_to_write;
         for (s32 i = 0; i < image_left_fill_bytes; i++) {
             fwrite(empty_data, sizeof(empty_data), 1, file);
         }
@@ -179,16 +176,16 @@ Content get_file_content(char *filename)
     }
 
     Content content = {};
-    content.version = 1;
-    strncpy(content.filename, filename, strlen(filename));
+    content.header.version = 1;
+    strncpy(content.header.filename, filename, strlen(filename));
     
     fseek(file, 0, SEEK_END);
-    content.size = ftell(file);
+    content.header.size = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    content.data = (u8 *)malloc(content.size);
+    content.data = (u8 *)malloc(content.header.size);
 
-    fread(content.data, content.size, 1, file);
+    fread(content.data, content.header.size, 1, file);
 
     fclose(file);
 
