@@ -1,5 +1,8 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "../include/raylib.h"
 #include "types.h"
@@ -18,6 +21,7 @@
 struct Content {
     u32 version;
     u32 size;
+    char filename[128];
     u8 *data;
 };
 
@@ -126,7 +130,7 @@ void write_bitmap(Content content)
     int remaining_data_size = content.size;
 
     for (int image_index = 0; image_index < images_to_generate; image_index++) {
-        snprintf(filename, sizeof(filename), "test_bitmap_from_file_%d.bmp", image_index);
+        snprintf(filename, sizeof(filename), "image_%04d.bmp", image_index);
         FILE *file;
         if (fopen_s(&file, filename, "wb") != 0) {
             exit(1);
@@ -141,9 +145,11 @@ void write_bitmap(Content content)
         if (image_index == 0) {
             fwrite(&content.version, sizeof(content.version), 1, file);
             fwrite(&content.size, sizeof(content.size), 1, file);
+            fwrite(content.filename, sizeof(content.filename), 1, file);
 
             bytes_to_write -= sizeof(content.version);
             bytes_to_write -= sizeof(content.size);
+            bytes_to_write -= sizeof(content.filename);
         }
 
         fwrite(content.data + offset, bytes_to_write, 1, file);
@@ -153,11 +159,6 @@ void write_bitmap(Content content)
         u8 empty_data[] = { 0 };
 
         s32 image_left_fill_bytes = image_size_bytes - bytes_to_write;
-        if (image_index == 0) {
-            image_left_fill_bytes -= sizeof(content.size);
-            image_left_fill_bytes -= sizeof(content.version);
-        }
-
         for (s32 i = 0; i < image_left_fill_bytes; i++) {
             fwrite(empty_data, sizeof(empty_data), 1, file);
         }
@@ -179,6 +180,7 @@ Content get_file_content(char *filename)
 
     Content content = {};
     content.version = 1;
+    strncpy(content.filename, filename, strlen(filename));
     
     fseek(file, 0, SEEK_END);
     content.size = ftell(file);
@@ -196,8 +198,6 @@ Content get_file_content(char *filename)
 int main()
 {
     Content content = get_file_content("test.txt");
-
-    // char *filename = "test_bitmap_from_file.bmp";
     write_bitmap(content);
 
     return 0;
