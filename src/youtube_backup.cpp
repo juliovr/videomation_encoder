@@ -65,8 +65,11 @@ struct Bitmap {
 
 char *image_filename_template = "image_%04d.bmp";
 
-void read_bitmap(char *filename)
+void read_bitmap()
 {
+    char filename[128];
+    snprintf(filename, sizeof(filename), image_filename_template, 0);
+    
     FILE *file;
     if (fopen_s(&file, filename, "rb") != 0) {
         exit(1);
@@ -83,12 +86,25 @@ void read_bitmap(char *filename)
     fclose(file);
 
     Bitmap *bitmap = (Bitmap *)data;
-    int x = 5;
+    Content *content = (Content *)(data + bitmap->header.data_offset);
+
+    u8 *file_data = data + bitmap->header.data_offset + sizeof(ContentHeader);
+
+    char output_filename[128];
+    snprintf(output_filename, sizeof(output_filename), "output_%s", content->header.filename);
+    FILE *output;
+    if (fopen_s(&output, output_filename, "wb") != 0) {
+        exit(1);
+    }
+
+    fwrite(file_data, content->header.size, 1, output);
+
+    fclose(output);
 }
 
 void write_bitmap(Content content)
 {
-#if 0
+#if 1
     s32 width = IMAGE_WIDTH;
     s32 height = IMAGE_HEIGHT;
 #else
@@ -147,14 +163,18 @@ void write_bitmap(Content content)
         // This only goes in the first image
         if (image_index == 0) {
             fwrite(&content.header, sizeof(ContentHeader), 1, file);
-            bytes_to_write -= sizeof(ContentHeader);
+
+            // When there is only 1 image, the whole content fills in it, so do not subtract the content header because it will write the whole data.
+            if (images_to_generate != 1) {
+                bytes_to_write -= sizeof(ContentHeader);
+            }
         }
 
         fwrite(content.data + offset, bytes_to_write, 1, file);
 
         
         // Store unfill image with 0.
-        u8 empty_data[] = { 0 };
+        u8 empty_data[] = { 0x1 };
 
         for (s32 i = 0; i < image_left_fill_bytes; i++) {
             fwrite(empty_data, sizeof(empty_data), 1, file);
@@ -196,6 +216,8 @@ int main()
 {
     Content content = get_file_content("test.txt");
     write_bitmap(content);
+
+    read_bitmap();
 
     return 0;
 }
