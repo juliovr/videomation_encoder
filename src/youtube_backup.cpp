@@ -12,8 +12,13 @@
 // #include "../include/curl/curl.h"
 
 
-#define IMAGE_WIDTH    1920
-#define IMAGE_HEIGHT   1080
+#if 1
+#define IMAGE_WIDTH     1920
+#define IMAGE_HEIGHT    1080
+#else
+#define IMAGE_WIDTH     50
+#define IMAGE_HEIGHT    50
+#endif
 
 #define MAX(a, b) ((a) > (b)) ? (a) : (b)
 #define MIN(a, b) ((a) < (b)) ? (a) : (b)
@@ -56,7 +61,6 @@ struct BitmapInfoHeader {
     u32 alpha_mask;
 };
 
-
 struct Bitmap {
     BitmapHeader header;
     BitmapInfoHeader info_header;
@@ -65,11 +69,20 @@ struct Bitmap {
 
 char *image_filename_template = "image_%04d.bmp";
 
-void read_bitmap()
+ContentHeader copy_header(ContentHeader *ptr)
 {
-    char filename[128];
-    snprintf(filename, sizeof(filename), image_filename_template, 0);
+    ContentHeader header = {};
+    if (ptr) {
+        header.version = ptr->version;
+        header.size = ptr->size;
+        strncpy(header.filename, ptr->filename, strlen(ptr->filename));
+    }
     
+    return header;
+}
+
+void get_data_from_file(char *filename, u8 *data)
+{
     FILE *file;
     if (fopen_s(&file, filename, "rb") != 0) {
         exit(1);
@@ -79,38 +92,91 @@ void read_bitmap()
     u32 file_size = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    u8 *data = (u8 *)malloc(file_size);
-
     fread(data, file_size, 1, file);
 
     fclose(file);
+}
 
-    Bitmap *bitmap = (Bitmap *)data;
-    Content *content = (Content *)(data + bitmap->header.data_offset);
-
-    u8 *file_data = data + bitmap->header.data_offset + sizeof(ContentHeader);
-
-    char output_filename[128];
-    snprintf(output_filename, sizeof(output_filename), "output_%s", content->header.filename);
-    FILE *output;
-    if (fopen_s(&output, output_filename, "wb") != 0) {
+Content get_file_content(char *filename)
+{
+    FILE *file;
+    errno_t fopen_error = fopen_s(&file, filename, "rb");
+    if (fopen_error != 0) {
         exit(1);
     }
 
-    fwrite(file_data, content->header.size, 1, output);
+    Content content = {};
+    content.header.version = 1;
+    strncpy(content.header.filename, filename, strlen(filename));
+    
+    fseek(file, 0, SEEK_END);
+    content.header.size = ftell(file);
+    fseek(file, 0, SEEK_SET);
 
-    fclose(output);
+    content.data = (u8 *)malloc(content.header.size);
+
+    fread(content.data, content.header.size, 1, file);
+
+    fclose(file);
+
+    return content;
+}
+
+void read_bitmap()
+{
+    size_t data_size = IMAGE_WIDTH*IMAGE_HEIGHT*4 + sizeof(ContentHeader);
+    u8 *data = (u8 *)malloc(data_size);
+    ContentHeader header = {};
+    u8 *file_data = 0;
+    u32 bytes_written = 0;
+    FILE *output;
+
+    for (int image_index = 0; ; image_index++) {
+        memset(data, 0, data_size);
+
+        char image_filename[128];
+        snprintf(image_filename, sizeof(image_filename), image_filename_template, image_index);
+        
+        get_data_from_file(image_filename, data);
+
+        Bitmap *bitmap = (Bitmap *)data;
+
+        u32 bytes_read;
+        if (image_index == 0) {
+            header = copy_header((ContentHeader *)(data + bitmap->header.data_offset));
+            file_data = data + bitmap->header.data_offset + sizeof(ContentHeader);
+            bytes_read = MIN(bitmap->info_header.image_size - sizeof(ContentHeader), header.size);
+
+            char output_filename[128];
+            snprintf(output_filename, sizeof(output_filename), "output_%s", header.filename);
+
+            if (fopen_s(&output, output_filename, "wb") != 0) {
+                exit(1);
+            }
+        } else {
+            file_data = data + bitmap->header.data_offset;
+            bytes_read = MIN(bitmap->info_header.image_size, header.size - bytes_written);
+        }
+        
+        fwrite(file_data, bytes_read, 1, output);
+
+        bytes_written += bytes_read;
+        if (bytes_written >= header.size) {
+            break;
+        }
+    }
+
+    if (output) {
+        fclose(output);
+    }
+
+    free(data);
 }
 
 void write_bitmap(Content content)
 {
-#if 1
     s32 width = IMAGE_WIDTH;
     s32 height = IMAGE_HEIGHT;
-#else
-    s32 width = 50;
-    s32 height = 50;
-#endif
     s32 image_size_bytes = width*height*4;
 
     BitmapHeader header = {};
@@ -185,31 +251,6 @@ void write_bitmap(Content content)
         offset += bytes_to_write;
         remaining_data_size -= bytes_to_write;
     }
-}
-
-Content get_file_content(char *filename)
-{
-    FILE *file;
-    errno_t fopen_error = fopen_s(&file, filename, "rb");
-    if (fopen_error != 0) {
-        exit(1);
-    }
-
-    Content content = {};
-    content.header.version = 1;
-    strncpy(content.header.filename, filename, strlen(filename));
-    
-    fseek(file, 0, SEEK_END);
-    content.header.size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    content.data = (u8 *)malloc(content.header.size);
-
-    fread(content.data, content.header.size, 1, file);
-
-    fclose(file);
-
-    return content;
 }
 
 int main()
