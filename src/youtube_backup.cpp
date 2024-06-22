@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../include/raylib.h"
 #include "types.h"
 
 // I can't include raylib and curl because some functions from windows socket API has the same name as some of raylib.
