@@ -19,6 +19,8 @@
 #define IMAGE_HEIGHT    50
 #endif
 
+#define BYTES_PER_PIXEL 3
+
 #define MAX(a, b) ((a) > (b)) ? (a) : (b)
 #define MIN(a, b) ((a) < (b)) ? (a) : (b)
 
@@ -54,10 +56,10 @@ struct BitmapInfoHeader {
     s32 vertical_resolution;
     u32 colors_used;
     u32 important_colors;
-    u32 red_mask;
-    u32 green_mask;
-    u32 blue_mask;
-    u32 alpha_mask;
+    // u32 red_mask;
+    // u32 green_mask;
+    // u32 blue_mask;
+    // u32 alpha_mask;
 };
 
 struct Bitmap {
@@ -123,7 +125,8 @@ Content get_file_content(char *filename)
 
 void read_bitmap()
 {
-    size_t data_size = IMAGE_WIDTH*IMAGE_HEIGHT*4 + sizeof(ContentHeader);
+    // size_t data_size = IMAGE_WIDTH*IMAGE_HEIGHT*BYTES_PER_PIXEL + sizeof(ContentHeader);
+    size_t data_size = IMAGE_WIDTH*IMAGE_HEIGHT*BYTES_PER_PIXEL + sizeof(Bitmap);
     u8 *data = (u8 *)malloc(data_size);
     ContentHeader header = {};
     u8 *file_data = 0;
@@ -134,7 +137,8 @@ void read_bitmap()
         memset(data, 0, data_size);
 
         char image_filename[128];
-        snprintf(image_filename, sizeof(image_filename), image_filename_template, image_index);
+        // snprintf(image_filename, sizeof(image_filename), image_filename_template, image_index);
+        snprintf(image_filename, sizeof(image_filename), "extracted_%04d.bmp", (image_index + 1));
         
         get_data_from_file(image_filename, data);
 
@@ -172,11 +176,13 @@ void read_bitmap()
     free(data);
 }
 
-void write_bitmap(Content content)
+void encode_data_to_bitmap(char *filename)
 {
+    Content content = get_file_content(filename);
+
     s32 width = IMAGE_WIDTH;
     s32 height = IMAGE_HEIGHT;
-    s32 image_size_bytes = width*height*4;
+    s32 image_size_bytes = width*height*BYTES_PER_PIXEL;
 
     BitmapHeader header = {};
     header.signature = 0x4d42;
@@ -188,23 +194,28 @@ void write_bitmap(Content content)
     info_header.width = width;
     info_header.height = height;
     info_header.planes = 1;
-    info_header.bits_per_pixel = 32;
-    info_header.compression = 3;
+    info_header.bits_per_pixel = BYTES_PER_PIXEL*8;
+    info_header.compression = 0;
     info_header.image_size = image_size_bytes;
-    info_header.horizontal_resolution = 2835;
-    info_header.vertical_resolution = 2835;
+    info_header.horizontal_resolution = 0;
+    info_header.vertical_resolution = 0;
     info_header.colors_used = 0;
     info_header.important_colors = 0;
-    info_header.red_mask   = 0xff000000;
-    info_header.green_mask = 0x00ff0000;
-    info_header.blue_mask  = 0x0000ff00;
-    info_header.alpha_mask = 0x000000ff;
+    // info_header.red_mask   = 0xff000000;
+    // info_header.green_mask = 0x00ff0000;
+    // info_header.blue_mask  = 0x0000ff00;
+    // info_header.alpha_mask = 0x000000ff;
 
+    // info_header.red_mask   = 0xff0000;
+    // info_header.green_mask = 0x00ff00;
+    // info_header.blue_mask  = 0x0000ff;
+
+    
     Bitmap bitmap = {};
     bitmap.header = header;
     bitmap.info_header = info_header;
 
-    char filename[128];
+    char image_filename[128];
 
     int running_bytes_written = 0;
 
@@ -213,9 +224,9 @@ void write_bitmap(Content content)
     int remaining_data_size = content.header.size;
 
     for (int image_index = 0; image_index < images_to_generate; image_index++) {
-        snprintf(filename, sizeof(filename), image_filename_template, image_index);
+        snprintf(image_filename, sizeof(image_filename), image_filename_template, image_index);
         FILE *file;
-        if (fopen_s(&file, filename, "wb") != 0) {
+        if (fopen_s(&file, image_filename, "wb") != 0) {
             exit(1);
         }
 
@@ -227,6 +238,8 @@ void write_bitmap(Content content)
 
         // This only goes in the first image
         if (image_index == 0) {
+            image_left_fill_bytes -= sizeof(ContentHeader);
+            
             fwrite(&content.header, sizeof(ContentHeader), 1, file);
 
             // When there is only 1 image, the whole content fills in it, so do not subtract the content header because it will write the whole data.
@@ -239,7 +252,7 @@ void write_bitmap(Content content)
 
         
         // Store unfill image with 0.
-        u8 empty_data[] = { 0x1 };
+        u8 empty_data[] = { 0 };
 
         for (s32 i = 0; i < image_left_fill_bytes; i++) {
             fwrite(empty_data, sizeof(empty_data), 1, file);
@@ -252,12 +265,36 @@ void write_bitmap(Content content)
     }
 }
 
+void create_video(char *video_filename)
+{
+    char command[256];
+    snprintf(command, sizeof(command), "ffmpeg -y -framerate 30 -i %s -c:v libx264 -c:a libmp3lame -b:a 320k -r 30 %s", image_filename_template, video_filename);
+
+    int rc = system(command);
+    if (rc != 0) {
+        exit(1);
+    }
+}
+
+void extract_images_from_video(char *video_filename)
+{
+    char command[256];
+    snprintf(command, sizeof(command), "ffmpeg -i %s -vf scale=1920:1080 extracted_%%04d.bmp", video_filename);
+
+    int rc = system(command);
+    if (rc != 0) {
+        exit(1);
+    }
+}
+
+
 int main()
 {
-    Content content = get_file_content("test.txt");
-    write_bitmap(content);
+    // encode_data_to_bitmap("test.txt");
+    create_video("output.mp4");
+    extract_images_from_video("output.mp4");
 
-    read_bitmap();
+    // read_bitmap();
 
     return 0;
 }
