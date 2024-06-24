@@ -138,7 +138,7 @@ void read_bitmap()
 
         char image_filename[128];
         // snprintf(image_filename, sizeof(image_filename), image_filename_template, image_index);
-        snprintf(image_filename, sizeof(image_filename), "extracted_%04d.bmp", (image_index + 1));
+        snprintf(image_filename, sizeof(image_filename), "extracted_%04d.bmp", image_index);
         
         get_data_from_file(image_filename, data);
 
@@ -268,7 +268,7 @@ void encode_data_to_bitmap(char *filename)
 void create_video(char *video_filename)
 {
     char command[256];
-    snprintf(command, sizeof(command), "ffmpeg -y -framerate 30 -i %s -c:v libx264 -c:a libmp3lame -b:a 320k -r 30 %s", image_filename_template, video_filename);
+    snprintf(command, sizeof(command), "ffmpeg -y -framerate 30 -i %s -c:v libx264rgb -vf \"fps=30\" -crf 0 -preset veryslow -pix_fmt bgr24 %s", image_filename_template, video_filename);
 
     int rc = system(command);
     if (rc != 0) {
@@ -279,7 +279,7 @@ void create_video(char *video_filename)
 void extract_images_from_video(char *video_filename)
 {
     char command[256];
-    snprintf(command, sizeof(command), "ffmpeg -i %s -vf scale=1920:1080 extracted_%%04d.bmp", video_filename);
+    snprintf(command, sizeof(command), "ffmpeg -i %s -vf \"fps=30\" -vsync 0 -pix_fmt bgr24 extracted_%%04d.bmp", video_filename);
 
     int rc = system(command);
     if (rc != 0) {
@@ -287,14 +287,70 @@ void extract_images_from_video(char *video_filename)
     }
 }
 
+Content debug_read_bitmap(char *filename)
+{
+    FILE *file;
+    if (fopen_s(&file, filename, "rb") != 0) {
+        exit(1);
+    }
+
+    fseek(file, 0, SEEK_END);
+    u32 file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    u8 *data = (u8 *)malloc(file_size);
+    
+    fread(data, file_size, 1, file);
+
+    fclose(file);
+
+    Bitmap *bitmap = (Bitmap *)data;
+    int x = 5;
+
+    Content content = {};
+    content.header.size = file_size;
+    content.data = data;
+
+    return content;
+}
+
+void compare_files()
+{
+    Content content1 = debug_read_bitmap("image_0000.bmp");
+    Content content2 = debug_read_bitmap("extracted_0000.bmp");
+
+    if (content1.header.size != content2.header.size) {
+        fprintf(stderr, "Different file sizes\n");
+        exit(1);
+    }
+
+    int match = 1;
+    for (u32 i = 0; i < content1.header.size; i++) {
+        if (content1.data[i] != content2.data[i]) {
+            fprintf(stderr, "Byte %02x is different: %02x -> %02x\n", i, content1.data[i], content2.data[i]);
+            match = 0;
+        }
+    }
+
+    if (match) {
+        printf("Files matched\n");
+    } else {
+        printf("Files doesn't matched\n");
+    }
+}
 
 int main()
 {
-    // encode_data_to_bitmap("test.txt");
+    printf("Starting...\n");
+    encode_data_to_bitmap("test.txt");
+    
     create_video("output.mp4");
     extract_images_from_video("output.mp4");
+    compare_files();
 
-    // read_bitmap();
+    read_bitmap();
+
+    printf("Done\n");
 
     return 0;
 }
