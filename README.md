@@ -1,4 +1,8 @@
-## ffmpeg command:
+# Videomation encoder
+
+The video-information encoder converts any file to images (using every 3-bytes chunk as a pixel), and combines them into a video.
+
+## ffmpeg commands
 
 ### Generate video from images
 `ffmpeg -y -framerate 30 -i image_0000.bmp -c:v libx264rgb -vf "fps=30" -crf 0 -preset veryslow -pix_fmt bgr24 output.mp4`
