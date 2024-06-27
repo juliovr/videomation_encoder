@@ -5,6 +5,6 @@ set common_compiler_flags=-Od -fp:fast -nologo -MD -Oi -Gm- -GR- -EHa- -W4 -WX -
 IF NOT EXIST bin mkdir bin
 pushd bin
 
-cl %common_compiler_flags% ..\src\youtube_backup.cpp /I ..\include /link -incremental:no -opt:ref user32.lib gdi32.lib winmm.lib shell32.lib
+cl %common_compiler_flags% ..\src\videomation_encoder.cpp /I ..\include /link -incremental:no -opt:ref user32.lib gdi32.lib winmm.lib shell32.lib
 
 popd

@@ -20,6 +20,8 @@
 #endif
 
 #define BYTES_PER_PIXEL 3
+#define FPS             30
+#define MIN_FRAMES      (FPS)       /* Make the video at least 1 second long by generating the same amount of images as 1 FPS, otherwise youtube reports a check error. */
 
 #define MAX(a, b) ((a) > (b)) ? (a) : (b)
 #define MIN(a, b) ((a) < (b)) ? (a) : (b)
@@ -56,10 +58,6 @@ struct BitmapInfoHeader {
     s32 vertical_resolution;
     u32 colors_used;
     u32 important_colors;
-    // u32 red_mask;
-    // u32 green_mask;
-    // u32 blue_mask;
-    // u32 alpha_mask;
 };
 
 struct Bitmap {
@@ -123,22 +121,21 @@ Content get_file_content(char *filename)
     return content;
 }
 
-void read_bitmap()
+ContentHeader extract_file_from_bitmaps()
 {
-    // size_t data_size = IMAGE_WIDTH*IMAGE_HEIGHT*BYTES_PER_PIXEL + sizeof(ContentHeader);
     size_t data_size = IMAGE_WIDTH*IMAGE_HEIGHT*BYTES_PER_PIXEL + sizeof(Bitmap);
     u8 *data = (u8 *)malloc(data_size);
     ContentHeader header = {};
     u8 *file_data = 0;
     u32 bytes_written = 0;
     FILE *output;
+    ContentHeader result = {};
 
     for (int image_index = 0; ; image_index++) {
         memset(data, 0, data_size);
 
         char image_filename[128];
-        // snprintf(image_filename, sizeof(image_filename), image_filename_template, image_index);
-        snprintf(image_filename, sizeof(image_filename), "extracted_%04d.bmp", image_index);
+        snprintf(image_filename, sizeof(image_filename), "extracted_%04d.bmp", (image_index + 1));
         
         get_data_from_file(image_filename, data);
 
@@ -152,6 +149,8 @@ void read_bitmap()
 
             char output_filename[128];
             snprintf(output_filename, sizeof(output_filename), "output_%s", header.filename);
+
+            strncpy(result.filename, output_filename, strlen(output_filename));
 
             if (fopen_s(&output, output_filename, "wb") != 0) {
                 exit(1);
@@ -174,6 +173,8 @@ void read_bitmap()
     }
 
     free(data);
+
+    return result;
 }
 
 void encode_data_to_bitmap(char *filename)
@@ -201,15 +202,6 @@ void encode_data_to_bitmap(char *filename)
     info_header.vertical_resolution = 0;
     info_header.colors_used = 0;
     info_header.important_colors = 0;
-    // info_header.red_mask   = 0xff000000;
-    // info_header.green_mask = 0x00ff0000;
-    // info_header.blue_mask  = 0x0000ff00;
-    // info_header.alpha_mask = 0x000000ff;
-
-    // info_header.red_mask   = 0xff0000;
-    // info_header.green_mask = 0x00ff00;
-    // info_header.blue_mask  = 0x0000ff;
-
     
     Bitmap bitmap = {};
     bitmap.header = header;
@@ -220,6 +212,7 @@ void encode_data_to_bitmap(char *filename)
     int running_bytes_written = 0;
 
     int images_to_generate = ((sizeof(ContentHeader) + content.header.size) / image_size_bytes) + 1; // + 1 for int division (to round up).
+    images_to_generate = MAX(images_to_generate, MIN_FRAMES);
     int offset = 0;
     int remaining_data_size = content.header.size;
 
@@ -233,7 +226,7 @@ void encode_data_to_bitmap(char *filename)
         fwrite(&bitmap, sizeof(Bitmap), 1, file);
 
         // Store data
-        u32 bytes_to_write = MIN(image_size_bytes, remaining_data_size);
+        s32 bytes_to_write = MIN(image_size_bytes, remaining_data_size);
         s32 image_left_fill_bytes = image_size_bytes - bytes_to_write;
 
         // This only goes in the first image
@@ -242,13 +235,15 @@ void encode_data_to_bitmap(char *filename)
             
             fwrite(&content.header, sizeof(ContentHeader), 1, file);
 
-            // When there is only 1 image, the whole content fills in it, so do not subtract the content header because it will write the whole data.
-            if (images_to_generate != 1) {
+            // When the data does not fill in 1 image, subtract the content header because it won't fill in the image. It will be written in the next
+            if (bytes_to_write > image_left_fill_bytes) {
                 bytes_to_write -= sizeof(ContentHeader);
             }
         }
 
-        fwrite(content.data + offset, bytes_to_write, 1, file);
+        if (bytes_to_write > 0) {
+            fwrite(content.data + offset, bytes_to_write, 1, file);
+        }
 
         
         // Store unfill image with 0.
@@ -314,10 +309,10 @@ Content debug_read_bitmap(char *filename)
     return content;
 }
 
-void compare_files()
+void compare_files(char *filename1, char *filename2)
 {
-    Content content1 = debug_read_bitmap("image_0000.bmp");
-    Content content2 = debug_read_bitmap("extracted_0000.bmp");
+    Content content1 = get_file_content(filename1);
+    Content content2 = get_file_content(filename2);
 
     if (content1.header.size != content2.header.size) {
         fprintf(stderr, "Different file sizes\n");
@@ -341,14 +336,16 @@ void compare_files()
 
 int main()
 {
+    char *input_filename = "test.txt";
     printf("Starting...\n");
-    encode_data_to_bitmap("test.txt");
+    encode_data_to_bitmap(input_filename);
     
     create_video("output.mp4");
     extract_images_from_video("output.mp4");
-    compare_files();
 
-    read_bitmap();
+    ContentHeader header = extract_file_from_bitmaps();
+
+    compare_files(input_filename, header.filename);
 
     printf("Done\n");
 

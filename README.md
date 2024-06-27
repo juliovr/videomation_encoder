@@ -20,8 +20,10 @@ The video-information encoder converts any file to images (using every 3-bytes c
 -pix_fmt bgr24: Matches the BMP format's pixel format.
 ```
 
-References:
+### Compare images
+Using compare from `imagemagick`: `compare -metric RMSE image_0000.bmp extracted_0001.bmp difference.png`
 
+References:
 - https://shotstack.io/learn/use-ffmpeg-to-convert-images-to-video/
 - https://www.bannerbear.com/blog/how-to-extract-images-from-a-video-using-ffmpeg/
 - ChatGPT (for the extra parameters to ensure the extracted frames matches the original images to construct the video).
